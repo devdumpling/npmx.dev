@@ -9,23 +9,27 @@ defineProps<{
   /** Whether to show the publisher username */
   showPublisher?: boolean
   prefetch?: boolean
+  selected?: boolean
+  index?: number
 }>()
 
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  })
-}
+const emit = defineEmits<{
+  focus: [index: number]
+}>()
 </script>
 
 <template>
-  <article class="group card-interactive">
+  <article
+    class="group card-interactive scroll-mt-48 scroll-mb-6"
+    :class="{ 'bg-bg-muted border-border-hover': selected }"
+  >
     <NuxtLink
       :to="{ name: 'package', params: { package: result.package.name.split('/') } }"
       :prefetch-on="prefetch ? 'visibility' : 'interaction'"
-      class="block focus:outline-none decoration-none"
+      class="block focus:outline-none decoration-none scroll-mt-48 scroll-mb-6"
+      :data-result-index="index"
+      @focus="index != null && emit('focus', index)"
+      @mouseenter="index != null && emit('focus', index)"
     >
       <header class="flex items-start justify-between gap-4 mb-2">
         <component
@@ -68,7 +72,12 @@ function formatDate(dateStr: string): string {
           <div v-if="result.package.date" class="flex items-center gap-1.5">
             <dt class="sr-only">Updated</dt>
             <dd>
-              <time :datetime="result.package.date">{{ formatDate(result.package.date) }}</time>
+              <NuxtTime
+                :datetime="result.package.date"
+                year="numeric"
+                month="short"
+                day="numeric"
+              />
             </dd>
           </div>
         </dl>

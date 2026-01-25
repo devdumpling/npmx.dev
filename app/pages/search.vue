@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { formatNumber } from '#imports'
 import { debounce } from 'perfect-debounce'
+import { isValidNewPackageName, checkPackageExists } from '~/utils/package-name'
 
 const route = useRoute()
 const router = useRouter()
@@ -8,10 +9,20 @@ const router = useRouter()
 // Local input value (updates immediately as user types)
 const inputValue = ref((route.query.q as string) ?? '')
 
-// Debounced URL update
+// Debounced URL update for search query
 const updateUrlQuery = debounce((value: string) => {
   router.replace({ query: { q: value || undefined } })
 }, 250)
+
+// Debounced URL update for page (less aggressive to avoid too many URL changes)
+const updateUrlPage = debounce((page: number) => {
+  router.replace({
+    query: {
+      ...route.query,
+      page: page > 1 ? page : undefined,
+    },
+  })
+}, 500)
 
 // Watch input and debounce URL updates
 watch(inputValue, value => {
@@ -36,6 +47,67 @@ watch(
 const isSearchFocused = ref(false)
 const searchInputRef = ref<HTMLInputElement>()
 
+const selectedIndex = ref(0)
+const packageListRef = useTemplateRef('packageListRef')
+
+const resultCount = computed(() => visibleResults.value?.objects.length ?? 0)
+
+function clampIndex(next: number) {
+  if (resultCount.value <= 0) return 0
+  return Math.max(0, Math.min(resultCount.value - 1, next))
+}
+
+function scrollToSelectedResult() {
+  // Use virtualizer's scrollToIndex to ensure the item is rendered and visible
+  packageListRef.value?.scrollToIndex(selectedIndex.value)
+}
+
+function focusSelectedResult() {
+  // First ensure the item is rendered by scrolling to it
+  scrollToSelectedResult()
+  // Then focus it after a tick to allow rendering
+  nextTick(() => {
+    const el = document.querySelector<HTMLElement>(`[data-result-index="${selectedIndex.value}"]`)
+    el?.focus()
+  })
+}
+
+function handleResultsKeydown(e: KeyboardEvent) {
+  if (resultCount.value <= 0) return
+
+  const isFromInput = (e.target as HTMLElement).tagName === 'INPUT'
+
+  if (e.key === 'ArrowDown') {
+    e.preventDefault()
+    selectedIndex.value = clampIndex(selectedIndex.value + 1)
+    // Only move focus if already in results, not when typing in search input
+    if (isFromInput) {
+      scrollToSelectedResult()
+    } else {
+      focusSelectedResult()
+    }
+    return
+  }
+
+  if (e.key === 'ArrowUp') {
+    e.preventDefault()
+    selectedIndex.value = clampIndex(selectedIndex.value - 1)
+    if (isFromInput) {
+      scrollToSelectedResult()
+    } else {
+      focusSelectedResult()
+    }
+    return
+  }
+
+  if (e.key === 'Enter') {
+    const el = document.querySelector<HTMLElement>(`[data-result-index="${selectedIndex.value}"]`)
+    if (!el) return
+    e.preventDefault()
+    el.click()
+  }
+}
+
 // Track if page just loaded (for hiding "Searching..." during view transition)
 const hasInteracted = ref(false)
 onMounted(() => {
@@ -49,22 +121,18 @@ onMounted(() => {
 const pageSize = 20
 const loadedPages = ref(1)
 const isLoadingMore = ref(false)
-const loadMoreTrigger = ref<HTMLElement>()
 
-// Get initial page from URL (for hard reload persistence)
+// Get initial page from URL (for scroll restoration on reload)
 const initialPage = computed(() => {
   const p = Number.parseInt(route.query.page as string, 10)
   return Number.isNaN(p) ? 1 : Math.max(1, p)
 })
 
-// Track if we need to scroll to restored position
-const needsScrollRestore = ref(false)
-
 // Initialize loaded pages from URL on mount
 onMounted(() => {
   if (initialPage.value > 1) {
+    // Load enough pages to show the initial page
     loadedPages.value = initialPage.value
-    needsScrollRestore.value = true
   }
   // Focus search input
   searchInputRef.value?.focus()
@@ -87,30 +155,6 @@ watch([results, query], ([newResults, newQuery]) => {
     previousQuery.value = newQuery
   }
 })
-
-// Reference to the results list for scroll restoration
-const resultsListRef = ref<HTMLOListElement>()
-
-// Scroll to restored position once results are loaded
-watch(
-  [results, status, () => needsScrollRestore.value],
-  ([newResults, newStatus, shouldScroll]) => {
-    if (shouldScroll && newStatus === 'success' && newResults && newResults.objects.length > 0) {
-      needsScrollRestore.value = false
-      // Scroll to the first item of the target page
-      nextTick(() => {
-        const targetItemIndex = (initialPage.value - 1) * pageSize
-        const listItems = resultsListRef.value?.children
-        if (listItems && listItems[targetItemIndex]) {
-          listItems[targetItemIndex].scrollIntoView({
-            behavior: 'instant',
-            block: 'start',
-          })
-        }
-      })
-    }
-  },
-)
 
 // Determine if we should show previous results while loading
 // (when new query is a continuation of the old one)
@@ -147,20 +191,12 @@ const hasMore = computed(() => {
   return loadedPages.value < totalPages.value
 })
 
-// Load more when trigger becomes visible
+// Load more when triggered by infinite scroll
 function loadMore() {
   if (isLoadingMore.value || !hasMore.value) return
 
   isLoadingMore.value = true
   loadedPages.value++
-
-  // Update URL with current page count for reload persistence
-  router.replace({
-    query: {
-      ...route.query,
-      page: loadedPages.value > 1 ? loadedPages.value : undefined,
-    },
-  })
 
   // Reset loading state after data updates
   nextTick(() => {
@@ -168,29 +204,127 @@ function loadMore() {
   })
 }
 
-// Intersection observer for infinite scroll
-onMounted(() => {
-  if (!loadMoreTrigger.value) return
+// Update URL when page changes from scrolling
+function handlePageChange(page: number) {
+  updateUrlPage(page)
+}
 
-  const observer = new IntersectionObserver(
-    entries => {
-      if (entries[0]?.isIntersecting && hasMore.value && status.value !== 'pending') {
-        loadMore()
-      }
-    },
-    { rootMargin: '200px' },
-  )
-
-  observer.observe(loadMoreTrigger.value)
-
-  onUnmounted(() => observer.disconnect())
-})
+function handleSelect(index: number) {
+  if (index < 0) return
+  selectedIndex.value = clampIndex(index)
+}
 
 // Reset pages when query changes
 watch(query, () => {
   loadedPages.value = 1
   hasInteracted.value = true
 })
+
+// Reset selection when query changes (new search)
+watch(query, () => {
+  selectedIndex.value = 0
+})
+
+// Check if current query could be a valid package name
+const isValidPackageName = computed(() => isValidNewPackageName(query.value.trim()))
+
+// Check if package name is available (doesn't exist on npm)
+const packageAvailability = ref<{ name: string; available: boolean } | null>(null)
+
+// Debounced check for package availability
+const checkAvailability = debounce(async (name: string) => {
+  if (!isValidNewPackageName(name)) {
+    packageAvailability.value = null
+    return
+  }
+
+  try {
+    const exists = await checkPackageExists(name)
+    // Only update if this is still the current query
+    if (name === query.value.trim()) {
+      packageAvailability.value = { name, available: !exists }
+    }
+  } catch {
+    packageAvailability.value = null
+  }
+}, 300)
+
+// Trigger availability check when query changes
+watch(
+  query,
+  q => {
+    const trimmed = q.trim()
+    if (isValidNewPackageName(trimmed)) {
+      checkAvailability(trimmed)
+    } else {
+      packageAvailability.value = null
+    }
+  },
+  { immediate: true },
+)
+
+// Get connector state
+const { isConnected, npmUser, listOrgUsers } = useConnector()
+
+// Check if this is a scoped package and extract scope
+const packageScope = computed(() => {
+  const q = query.value.trim()
+  if (!q.startsWith('@')) return null
+  const match = q.match(/^@([^/]+)\//)
+  return match ? match[1] : null
+})
+
+// Track org membership for scoped packages
+const orgMembership = ref<Record<string, boolean>>({})
+
+// Check org membership when scope changes
+watch(
+  [packageScope, isConnected, npmUser],
+  async ([scope, connected, user]) => {
+    if (!scope || !connected || !user) return
+    // Skip if already checked
+    if (scope in orgMembership.value) return
+
+    try {
+      const users = await listOrgUsers(scope)
+      // Check if current user is in the org's user list
+      if (users && user in users) {
+        orgMembership.value[scope] = true
+      } else {
+        orgMembership.value[scope] = false
+      }
+    } catch {
+      orgMembership.value[scope] = false
+    }
+  },
+  { immediate: true },
+)
+
+// Check if user can publish to scope (either their username or an org they're a member of)
+const canPublishToScope = computed(() => {
+  const scope = packageScope.value
+  if (!scope) return true // Unscoped package
+  if (!npmUser.value) return false
+  // Can publish if scope matches username
+  if (scope.toLowerCase() === npmUser.value.toLowerCase()) return true
+  // Can publish if user is a member of the org
+  return orgMembership.value[scope] === true
+})
+
+// Show claim prompt when valid name, available, connected, and has permission
+const showClaimPrompt = computed(() => {
+  return (
+    isConnected.value &&
+    isValidPackageName.value &&
+    packageAvailability.value?.available === true &&
+    packageAvailability.value.name === query.value.trim() &&
+    canPublishToScope.value &&
+    status.value !== 'pending'
+  )
+})
+
+// Modal state for claiming a package
+const claimModalOpen = ref(false)
 
 useSeoMeta({
   title: () => (query.value ? `Search: ${query.value} - npmx` : 'Search Packages - npmx'),
@@ -203,105 +337,133 @@ defineOgImageComponent('Default', {
 </script>
 
 <template>
-  <main class="container py-8 sm:py-12 overflow-x-hidden">
-    <header class="mb-8">
-      <h1 class="font-mono text-2xl sm:text-3xl font-medium mb-6">search</h1>
+  <main class="overflow-x-hidden">
+    <!-- Sticky search header - positioned below AppHeader (h-14 = 56px) -->
+    <header class="sticky top-14 z-40 bg-bg/95 backdrop-blur-sm border-b border-border">
+      <div class="container py-4">
+        <h1 class="font-mono text-xl sm:text-2xl font-medium mb-4">search</h1>
 
-      <search>
-        <form role="search" class="relative" @submit.prevent>
-          <label for="search-input" class="sr-only">Search npm packages</label>
+        <search>
+          <form role="search" class="relative" @submit.prevent>
+            <label for="search-input" class="sr-only">Search npm packages</label>
 
-          <div class="relative group" :class="{ 'is-focused': isSearchFocused }">
-            <!-- Subtle glow effect -->
-            <div
-              class="absolute -inset-px rounded-lg bg-gradient-to-r from-fg/0 via-fg/5 to-fg/0 opacity-0 transition-opacity duration-500 blur-sm group-[.is-focused]:opacity-100"
-            />
-
-            <div class="search-box relative flex items-center">
-              <span
-                class="absolute left-4 text-fg-subtle font-mono text-base pointer-events-none transition-colors duration-200 group-focus-within:text-fg-muted"
-              >
-                /
-              </span>
-              <input
-                id="search-input"
-                ref="searchInputRef"
-                v-model="inputValue"
-                type="search"
-                name="q"
-                placeholder="search packages..."
-                autocomplete="off"
-                class="w-full max-w-full bg-bg-subtle border border-border rounded-lg pl-8 pr-4 py-3 font-mono text-base text-fg placeholder:text-fg-subtle transition-all duration-300 focus:(border-border-hover outline-none) appearance-none"
-                @focus="isSearchFocused = true"
-                @blur="isSearchFocused = false"
+            <div class="relative group" :class="{ 'is-focused': isSearchFocused }">
+              <!-- Subtle glow effect -->
+              <div
+                class="absolute -inset-px rounded-lg bg-gradient-to-r from-fg/0 via-fg/5 to-fg/0 opacity-0 transition-opacity duration-500 blur-sm group-[.is-focused]:opacity-100"
               />
-              <!-- Hidden submit button for accessibility (form must have submit button per WCAG) -->
-              <button type="submit" class="sr-only">Search</button>
+
+              <div class="search-box relative flex items-center">
+                <span
+                  class="absolute left-4 text-fg-subtle font-mono text-base pointer-events-none transition-colors duration-200 group-focus-within:text-fg-muted"
+                >
+                  /
+                </span>
+                <input
+                  id="search-input"
+                  ref="searchInputRef"
+                  v-model="inputValue"
+                  type="search"
+                  name="q"
+                  placeholder="search packages…"
+                  autocomplete="off"
+                  class="w-full max-w-full bg-bg-subtle border border-border rounded-lg pl-8 pr-4 py-3 font-mono text-base text-fg placeholder:text-fg-subtle transition-colors duration-300 focus:(border-border-hover outline-none) appearance-none"
+                  @focus="isSearchFocused = true"
+                  @blur="isSearchFocused = false"
+                  @keydown="handleResultsKeydown"
+                />
+                <!-- Hidden submit button for accessibility (form must have submit button per WCAG) -->
+                <button type="submit" class="sr-only">Search</button>
+              </div>
             </div>
-          </div>
-        </form>
-      </search>
+          </form>
+        </search>
+      </div>
     </header>
 
-    <section v-if="query" aria-label="Search results">
-      <!-- Initial loading (only after user interaction, not during view transition) -->
-      <LoadingSpinner v-if="showSearching" text="Searching..." />
+    <!-- Results area with container padding -->
+    <div class="container pt-20 pb-6">
+      <section v-if="query" aria-label="Search results" @keydown="handleResultsKeydown">
+        <!-- Initial loading (only after user interaction, not during view transition) -->
+        <LoadingSpinner v-if="showSearching" text="Searching…" />
 
-      <div v-else-if="visibleResults">
-        <p
-          v-if="visibleResults.total > 0"
-          role="status"
-          class="text-fg-muted text-sm mb-6 font-mono"
-        >
-          Found <span class="text-fg">{{ formatNumber(visibleResults.total) }}</span> packages
-          <span v-if="status === 'pending'" class="text-fg-subtle">(updating...)</span>
-        </p>
-
-        <p
-          v-else-if="status !== 'pending'"
-          role="status"
-          class="text-fg-muted py-12 text-center font-mono"
-        >
-          No packages found for "<span class="text-fg">{{ query }}</span
-          >"
-        </p>
-
-        <ol
-          v-if="visibleResults.objects.length > 0"
-          ref="resultsListRef"
-          class="space-y-3 list-none m-0 p-0"
-        >
-          <li
-            v-for="(result, index) in visibleResults.objects"
-            :key="result.package.name"
-            class="animate-fade-in animate-fill-both"
-            :style="{ animationDelay: `${Math.min(index * 0.02, 0.3)}s` }"
-          >
-            <PackageCard :result="result" heading-level="h2" show-publisher />
-          </li>
-        </ol>
-
-        <!-- Infinite scroll trigger -->
-        <div ref="loadMoreTrigger" class="py-8 flex items-center justify-center">
+        <div v-else-if="visibleResults">
+          <!-- Claim prompt - shown at top when valid name but no exact match -->
           <div
-            v-if="isLoadingMore || (status === 'pending' && loadedPages > 1)"
-            class="flex items-center gap-3 text-fg-muted font-mono text-sm"
+            v-if="showClaimPrompt && visibleResults.total > 0"
+            class="mb-6 p-4 bg-bg-subtle border border-border rounded-lg flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4"
           >
-            <span class="w-4 h-4 border-2 border-fg-subtle border-t-fg rounded-full animate-spin" />
-            Loading more...
+            <div class="flex-1 min-w-0">
+              <p class="font-mono text-sm text-fg">
+                "<span class="text-fg font-medium">{{ query }}</span
+                >" is not taken
+              </p>
+              <p class="text-xs text-fg-muted mt-0.5">Claim this package name on npm</p>
+            </div>
+            <button
+              type="button"
+              class="shrink-0 px-4 py-2 font-mono text-sm text-bg bg-fg rounded-md transition-all duration-200 hover:bg-fg/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg/50"
+              @click="claimModalOpen = true"
+            >
+              Claim "{{ query }}"
+            </button>
           </div>
-          <p
-            v-else-if="!hasMore && visibleResults.objects.length > 0"
-            class="text-fg-subtle font-mono text-sm"
-          >
-            End of results
-          </p>
-        </div>
-      </div>
-    </section>
 
-    <section v-else class="py-20 text-center">
-      <p class="text-fg-subtle font-mono text-sm">Start typing to search packages</p>
-    </section>
+          <p
+            v-if="visibleResults.total > 0"
+            role="status"
+            class="text-fg-muted text-sm mb-6 font-mono"
+          >
+            Found <span class="text-fg">{{ formatNumber(visibleResults.total) }}</span> packages
+            <span v-if="status === 'pending'" class="text-fg-subtle">(updating…)</span>
+          </p>
+
+          <!-- No results found -->
+          <div v-else-if="status !== 'pending'" role="status" class="py-12 text-center">
+            <p class="text-fg-muted font-mono mb-6">
+              No packages found for "<span class="text-fg">{{ query }}</span
+              >"
+            </p>
+
+            <!-- Offer to claim the package name if it's valid -->
+            <div v-if="showClaimPrompt" class="max-w-md mx-auto">
+              <div class="p-4 bg-bg-subtle border border-border rounded-lg">
+                <p class="text-sm text-fg-muted mb-3">Want to claim this package name?</p>
+                <button
+                  type="button"
+                  class="px-4 py-2 font-mono text-sm text-bg bg-fg rounded-md transition-all duration-200 hover:bg-fg/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg/50"
+                  @click="claimModalOpen = true"
+                >
+                  Claim "{{ query }}"
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <PackageList
+            v-if="visibleResults.objects.length > 0"
+            ref="packageListRef"
+            :results="visibleResults.objects"
+            :selected-index="selectedIndex"
+            heading-level="h2"
+            show-publisher
+            :has-more="hasMore"
+            :is-loading="isLoadingMore || (status === 'pending' && loadedPages > 1)"
+            :page-size="pageSize"
+            :initial-page="initialPage"
+            @load-more="loadMore"
+            @page-change="handlePageChange"
+            @select="handleSelect"
+          />
+        </div>
+      </section>
+
+      <section v-else class="py-20 text-center">
+        <p class="text-fg-subtle font-mono text-sm">Start typing to search packages</p>
+      </section>
+    </div>
+
+    <!-- Claim package modal -->
+    <ClaimPackageModal v-model:open="claimModalOpen" :package-name="query" />
   </main>
 </template>
