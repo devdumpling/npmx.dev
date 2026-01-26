@@ -218,6 +218,30 @@ const homepageUrl = computed(() => {
   return homepage
 })
 
+// Docs URL: prefer package's homepage (often their docs site), fall back to our API docs
+const docsLink = computed(() => {
+  const homepage = displayVersion.value?.homepage
+  if (homepage) {
+    return {
+      href: homepage,
+      isExternal: true,
+    }
+  }
+
+  // Fall back to our generated API docs
+  if (displayVersion.value) {
+    return {
+      to: {
+        name: 'docs' as const,
+        params: { path: [...pkg.value!.name.split('/'), 'v', displayVersion.value.version] },
+      },
+      isExternal: false,
+    }
+  }
+
+  return null
+})
+
 function normalizeGitUrl(url: string): string {
   return url
     .replace(/^git\+/, '')
@@ -676,17 +700,7 @@ defineOgImageComponent('Package', {
                 {{ formatCompactNumber(stars, { decimals: 1 }) }}
               </a>
             </li>
-            <li v-if="homepageUrl">
-              <a
-                :href="homepageUrl"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="link-subtle font-mono text-sm inline-flex items-center gap-1.5"
-              >
-                <span class="i-carbon-link w-4 h-4" aria-hidden="true" />
-                {{ t('package.links.homepage') }}
-              </a>
-            </li>
+
             <li v-if="displayVersion?.bugs?.url">
               <a
                 :href="displayVersion.bugs.url"
@@ -726,12 +740,30 @@ defineOgImageComponent('Package', {
                 {{ t('package.links.jsr') }}
               </a>
             </li>
-            <li v-if="displayVersion" class="sm:ml-auto">
+            <li class="sm:flex-grow">
+              <a
+                :href="`https://socket.dev/npm/package/${pkg.name}/overview/${displayVersion?.version ?? 'latest'}`"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="link-subtle font-mono text-sm inline-flex items-center gap-1.5"
+              >
+                <span class="i-simple-icons-socket w-4 h-4" aria-hidden="true" />
+                {{ t('package.links.socket') }}
+              </a>
+            </li>
+            <li v-if="docsLink">
+              <a
+                v-if="docsLink.isExternal"
+                :href="docsLink.href"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="link-subtle font-mono text-sm inline-flex items-center gap-1.5"
+              >
+                docs
+              </a>
               <NuxtLink
-                :to="{
-                  name: 'docs',
-                  params: { path: [...pkg.name.split('/'), 'v', displayVersion.version] },
-                }"
+                v-else
+                :to="docsLink.to"
                 class="link-subtle font-mono text-sm inline-flex items-center gap-1.5"
               >
                 <span class="i-carbon-document w-4 h-4" aria-hidden="true" />
