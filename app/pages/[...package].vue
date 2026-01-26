@@ -757,16 +757,15 @@ defineOgImageComponent('Package', {
                 :href="docsLink.href"
                 target="_blank"
                 rel="noopener noreferrer"
-                class="link-subtle font-mono text-sm inline-flex items-center gap-1.5"
+                class="link-subtle font-mono text-sm inline-flex items-center pb-2"
               >
                 docs
               </a>
               <NuxtLink
                 v-else
                 :to="docsLink.to"
-                class="link-subtle font-mono text-sm inline-flex items-center gap-1.5"
+                class="link-subtle font-mono text-sm inline-flex items-center pb-2"
               >
-                <span class="i-carbon-document w-4 h-4" aria-hidden="true" />
                 docs
               </NuxtLink>
             </li>
@@ -776,7 +775,7 @@ defineOgImageComponent('Package', {
                   name: 'code',
                   params: { path: [...pkg.name.split('/'), 'v', displayVersion.version] },
                 }"
-                class="link-subtle font-mono text-sm inline-flex items-center gap-1.5"
+                class="link-subtle font-mono text-sm inline-flex items-center gap-1.5 pb-2"
                 aria-keyshortcuts="."
               >
                 <span class="i-carbon-code w-4 h-4 sm:invisible" aria-hidden="true" />
