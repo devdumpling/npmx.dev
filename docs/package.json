@@ -1,6 +1,16 @@
 {
   "name": "npmx-docs",
   "private": true,
+  "description": "npmx public docs site",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/npmx-dev/npmx.dev.git",
+    "directory": "docs"
+  },
+  "bugs": {
+    "url": "https://github.com/npmx-dev/npmx.dev/issues"
+  },
   "scripts": {
     "dev": "nuxt dev --extends docus",
     "build": "nuxt build --extends docus",
@@ -9,7 +19,7 @@
   },
   "dependencies": {
     "docus": "latest",
-    "better-sqlite3": "^12.5.0",
+    "better-sqlite3": "12.5.0",
     "nuxt": "^4.2.2"
   }
 }
