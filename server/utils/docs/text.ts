@@ -103,12 +103,15 @@ export async function renderMarkdown(text: string, symbolLookup: SymbolLookup): 
   // Pattern handles:
   // - Optional whitespace before/after language identifier
   // - \r\n, \n, or \r line endings
-  const codeBlockData: Array<{ lang: string, code: string }> = []
-  let result = text.replace(/```[ \t]*(\w*)[ \t]*(?:\r\n|\r|\n)([\s\S]*?)(?:\r\n|\r|\n)?```/g, (_, lang, code) => {
-    const index = codeBlockData.length
-    codeBlockData.push({ lang: lang || 'text', code: code.trim() })
-    return `__CODE_BLOCK_${index}__`
-  })
+  const codeBlockData: Array<{ lang: string; code: string }> = []
+  let result = text.replace(
+    /```[ \t]*(\w*)[ \t]*(?:\r\n|\r|\n)([\s\S]*?)(?:\r\n|\r|\n)?```/g,
+    (_, lang, code) => {
+      const index = codeBlockData.length
+      codeBlockData.push({ lang: lang || 'text', code: code.trim() })
+      return `__CODE_BLOCK_${index}__`
+    },
+  )
 
   // Now process the rest (JSDoc links, HTML escaping, etc.)
   result = parseJsDocLinks(result, symbolLookup)
