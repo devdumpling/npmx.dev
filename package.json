@@ -15,6 +15,7 @@
     "lint:fix": "vite lint --fix && vite fmt",
     "generate": "nuxt generate",
     "npmx-connector": "pnpm --filter npmx-connector dev",
+    "docs:dev": "pnpm run --filter npmx-docs dev",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare && simple-git-hooks",
     "test": "vite test",
