@@ -740,6 +740,26 @@ defineOgImageComponent('Package', {
                 {{ t('package.links.jsr') }}
               </a>
             </li>
+            <li v-if="docsLink">
+              <a
+                v-if="docsLink.isExternal"
+                :href="docsLink.href"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="link-subtle font-mono text-sm inline-flex items-center gap-1.5"
+              >
+                <span class="i-carbon-document w-4 h-4" aria-hidden="true" />
+                {{ t('package.links.docs') }}
+              </a>
+              <NuxtLink
+                v-else
+                :to="docsLink.to"
+                class="link-subtle font-mono text-sm inline-flex items-center gap-1.5"
+              >
+                <span class="i-carbon-document w-4 h-4" aria-hidden="true" />
+                {{ t('package.links.docs') }}
+              </NuxtLink>
+            </li>
             <li class="sm:flex-grow">
               <a
                 :href="`https://socket.dev/npm/package/${pkg.name}/overview/${displayVersion?.version ?? 'latest'}`"
@@ -751,31 +771,14 @@ defineOgImageComponent('Package', {
                 {{ t('package.links.socket') }}
               </a>
             </li>
-            <li v-if="docsLink">
-              <a
-                v-if="docsLink.isExternal"
-                :href="docsLink.href"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="link-subtle font-mono text-sm inline-flex items-center pb-2"
-              >
-                docs
-              </a>
-              <NuxtLink
-                v-else
-                :to="docsLink.to"
-                class="link-subtle font-mono text-sm inline-flex items-center pb-2"
-              >
-                docs
-              </NuxtLink>
-            </li>
+
             <li v-if="displayVersion">
               <NuxtLink
                 :to="{
                   name: 'code',
                   params: { path: [...pkg.name.split('/'), 'v', displayVersion.version] },
                 }"
-                class="link-subtle font-mono text-sm inline-flex items-center gap-1.5 pb-2"
+                class="link-subtle font-mono text-sm inline-flex items-center gap-1.5"
                 aria-keyshortcuts="."
               >
                 <span class="i-carbon-code w-4 h-4 sm:invisible" aria-hidden="true" />
