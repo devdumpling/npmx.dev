@@ -25,7 +25,6 @@ export default defineCachedEventHandler(
       throw createError({ statusCode: 404, message: 'No latest version found' })
     }
 
-    // Extract exports from the already-fetched packument to avoid redundant fetch
     const versionData = packument.versions?.[version]
     const exports = versionData?.exports as Record<string, unknown> | undefined
 

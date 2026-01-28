@@ -61,7 +61,7 @@ export async function getDocNodes(
     return { version: 1, nodes: allNodes }
   } catch {
     // Silent failure - all docgen errors are graceful degradation
-    // This feature should never wake up a maintainer
+    // In future should maybe consider debug mode / struct logging of some kind
     return { version: 1, nodes: [] }
   }
 }
